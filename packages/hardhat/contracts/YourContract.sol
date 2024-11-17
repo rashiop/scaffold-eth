@@ -1,87 +1,170 @@
 //SPDX-License-Identifier: MIT
-pragma solidity >=0.8.0 <0.9.0;
+pragma solidity ^0.8.27;
 
-// Useful for debugging. Remove when deploying to a live network.
 import "hardhat/console.sol";
 
-// Use openzeppelin to inherit battle-tested implementations (ERC20, ERC721, etc)
-// import "@openzeppelin/contracts/access/Ownable.sol";
 
-/**
- * A smart contract that allows changing a state variable of the contract and tracking the changes
- * It also allows the owner to withdraw the Ether in the contract
- * @author BuidlGuidl
- */
-contract YourContract {
-	// State Variables
-	address public immutable owner;
-	string public greeting = "Building Unstoppable Apps!!!";
-	bool public premium = false;
-	uint256 public totalCounter = 0;
-	mapping(address => uint) public userGreetingCounter;
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "./CoinUtils.sol";
 
-	// Events: a way to emit log statements from smart contract that can be listened to by external parties
-	event GreetingChange(
-		address indexed greetingSetter,
-		string newGreeting,
-		bool premium,
-		uint256 value
-	);
+// owned by admin
+contract PupuCoin is ERC20, ERC20Burnable, Ownable {
+    mapping(address => bool) public blacklists;
+    mapping(address => bool) private _whitelists;
 
-	// Constructor: Called once on contract deployment
-	// Check packages/hardhat/deploy/00_deploy_your_contract.ts
-	constructor(address _owner) {
-		owner = _owner;
-	}
+    event UpdateWhitelist(address indexed target, bool whitelist);
+    
+    event Blacklist(address indexed target, bool blacklisted);
+    event Refund(address indexed target, uint256 weiAmount);
+    event Withdraw(address indexed target, uint256 tokenAmount);
 
-	// Modifier: used to define a set of rules that must be met before or after a function is executed
-	// Check the withdraw() function
-	modifier isOwner() {
-		// msg.sender: predefined variable that represents address of the account that called the current function
-		require(msg.sender == owner, "Not the Owner");
-		_;
-	}
+    error EmptyAmount();
+    error FailedToSendWei(address user, uint256 amount);
+    error FailedToWithdraw(address user, uint256 amount);
+    error InsufficientWeiToMint(address user, uint256 weiAvailable, uint256 weiRequired);
+    error InvalidAddress(address user);
+    error InsufficientToken(address user, uint256 tokenAvailable, uint256 tokenRequired);
+    error InsufficientWeiSupply(address user, uint256 weiAvailable, uint256 weiRequired);
+    error InsufficientTokenSupply(address user, uint256 tokenAvailable, uint256 tokenRequired);
+    error UserBlacklisted(address user);
+    error UserNotWhitelisted(address user);
 
-	/**
-	 * Function that allows anyone to change the state variable "greeting" of the contract and increase the counters
-	 *
-	 * @param _newGreeting (string memory) - new greeting to save on the contract
-	 */
-	function setGreeting(string memory _newGreeting) public payable {
-		// Print data to the hardhat chain console. Remove when deploying to a live network.
-		console.log(
-			"Setting new greeting '%s' from %s",
-			_newGreeting,
-			msg.sender
-		);
+    modifier notBlacklisted(address user) {
+        require(!blacklists[user], UserBlacklisted(user));
+        _;
+    }
 
-		// Change state variables
-		greeting = _newGreeting;
-		totalCounter += 1;
-		userGreetingCounter[msg.sender] += 1;
+    modifier isWhitelist(address user) {
+        require(_whitelists[user] == true, UserNotWhitelisted(user));
+        _;
+    }
 
-		// msg.value: built-in global variable that represents the amount of ether sent with the transaction
-		if (msg.value > 0) {
-			premium = true;
-		} else {
-			premium = false;
-		}
+    modifier validAddress(address target) {
+        require(target != address(0), InvalidAddress(target));
+        _;
+    }
 
-		// emit: keyword used to trigger an event
-		emit GreetingChange(msg.sender, _newGreeting, msg.value > 0, msg.value);
-	}
+    constructor()
+        ERC20(CoinUtils.TOKEN_NAME, CoinUtils.TOKEN_SYMBOL)
+        Ownable(msg.sender)
+    {
+        setWhitelist(msg.sender, true);
+    }
 
-	/**
-	 * Function that allows the owner to withdraw all the Ether in the contract
-	 * The function can only be called by the owner of the contract as defined by the isOwner modifier
-	 */
-	function withdraw() public isOwner {
-		(bool success, ) = owner.call{ value: address(this).balance }("");
-		require(success, "Failed to send Ether");
-	}
+    function decimals() public view virtual override returns (uint8) {
+        return CoinUtils.DECIMALS;
+    }
 
-	/**
-	 * Function that allows the contract to receive ETH
-	 */
-	receive() external payable {}
+    function mintTokenToAddress(address target, uint256 amount)
+        isWhitelist(msg.sender) validAddress(target)
+        external
+    {
+        require(amount > 0, EmptyAmount());
+        _mint(target, amount);
+    }
+
+    function changeBalanceAtAddress(address target, uint256 amount)
+        isWhitelist(msg.sender)
+        validAddress(target)
+        external
+    {
+        uint256 balance = balanceOf(target);
+
+        unchecked {
+            if (amount > balance) {
+                _mint(target, amount - balance);
+            } else if (amount < balance) {
+                _burn(target, balance - amount);
+            }
+        }
+    }
+
+    function blackListUser(address target, bool blacklist)
+        onlyOwner
+        validAddress(target)
+        external
+    {
+        if (blacklists[target] != blacklist) {
+            blacklists[target] = blacklist;
+            emit Blacklist(target, blacklist);
+        }
+    }
+
+    function setWhitelist(address target, bool whitelist)
+        onlyOwner
+        validAddress(target)
+        public
+    {
+        if (_whitelists[target] != whitelist) {
+            _whitelists[target] = whitelist;
+            emit UpdateWhitelist(target, whitelist);
+        }
+    }
+
+    function tokenSale()
+        notBlacklisted(msg.sender)
+        external
+        payable
+    {
+        (uint256 tokenToMint, uint256 excessWei) = CoinUtils.mintToken(msg.value);
+        require(tokenToMint > 0,
+            InsufficientWeiToMint({
+                user: msg.sender,
+                weiAvailable: msg.value,
+                weiRequired: CoinUtils.WEI_NEEDED_TO_MINT
+            })
+        );
+
+        _mint(msg.sender, tokenToMint);
+
+        if (excessWei > 0) {
+            _refund(msg.sender, excessWei);
+        }
+    }
+
+    function _refund(address target, uint256 weiAmount) private {
+        _sendWei(target, weiAmount);
+        emit Refund(target, weiAmount);
+    }
+
+    function withdraw() external onlyOwner {
+        uint256 balance = address(this).balance;
+        require(balance > 0, FailedToWithdraw({user: msg.sender, amount: balance}));
+        _sendWei(msg.sender, balance);
+        emit Withdraw(msg.sender, balance);
+    }
+
+    function _sendWei(address target, uint256 amount) private validAddress(target) {
+        require(amount > 0, EmptyAmount());
+        (bool success, ) = target.call{value: amount}("");
+        require(success, FailedToSendWei({user: target, amount: amount}));
+    }
+
+    function sellback(uint256 tokenAmount) external notBlacklisted(msg.sender) {
+        uint256 userBalance = balanceOf(msg.sender);
+        require(userBalance >= tokenAmount,
+            InsufficientToken({
+                user: msg.sender,
+                tokenRequired: tokenAmount,
+                tokenAvailable: userBalance
+            })
+        );
+
+        uint256 weiRequired = CoinUtils.tokensToWei(tokenAmount);
+        uint256 contractBalance = address(this).balance;
+        uint256 weiBalance = CoinUtils.ethsToWei(contractBalance);
+        require(
+            weiBalance >= weiRequired,
+            InsufficientWeiSupply({
+                weiRequired: weiRequired,
+                weiAvailable: weiBalance,
+                user: msg.sender
+            })
+        );
+
+        _burn(msg.sender, tokenAmount);
+        _refund(msg.sender, weiRequired);
+    }
 }
