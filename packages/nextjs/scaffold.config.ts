@@ -1,4 +1,4 @@
-import * as chains from "viem/chains";
+import * as chains from 'viem/chains'
 
 export type ScaffoldConfig = {
   targetNetworks: readonly chains.Chain[];
@@ -10,6 +10,7 @@ export type ScaffoldConfig = {
 
 const scaffoldConfig = {
   // The networks on which your DApp is live
+  // targetNetworks: [chains.hardhat],
   targetNetworks: [chains.hardhat],
 
   // The interval at which your front-end polls the RPC servers for new data
