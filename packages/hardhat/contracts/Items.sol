@@ -7,6 +7,8 @@ import "@openzeppelin/contracts/token/ERC1155/extensions/ERC1155Pausable.sol";
 import "@openzeppelin/contracts/token/ERC1155/extensions/ERC1155Burnable.sol";
 
 contract Items is ERC1155, ERC1155Pausable, ERC1155Burnable, Ownable {
+  address private _forgeryAddress;
+
   uint256 constant public PUPU_WHISKER = 0;
   uint256 constant public DRAGON_CLAW = 1;
   uint256 constant public MERMAID_TEAR = 2;
@@ -14,13 +16,19 @@ contract Items is ERC1155, ERC1155Pausable, ERC1155Burnable, Ownable {
   uint256 constant public CHAOTIC_SWORD = 4; // 1, 2
   uint256 constant public MYSTERIOUS_CHARM = 5; // 0, 2
   uint256 constant public CONFUSION_BLADE = 6; // 0, 1, 2 
-
+  
   error InvalidMintId(uint256 id);
+  error Unauthorized();
+
 
   // TODO: update use IPFS uri
   constructor()
     ERC1155("https://game.example/api/item/{id}.json") Ownable(msg.sender)
   {
+  }
+
+  function setForgeryAddress(address forgeryAddress) external onlyOwner {
+    _forgeryAddress = forgeryAddress;
   }
 
   function mintMaterial(uint256 materialId)
@@ -37,6 +45,7 @@ contract Items is ERC1155, ERC1155Pausable, ERC1155Burnable, Ownable {
     external
     onlyOwner
   {
+    require(msg.sender == _forgeryAddress, Unauthorized());
     require(materialId >= 3 && materialId <= 6, InvalidMintId(materialId));
 
     _mint(to, materialId, 1, "");
