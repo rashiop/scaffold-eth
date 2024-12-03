@@ -7,7 +7,7 @@ import { GenericContractsDeclaration } from "~~/utils/scaffold-eth/contract";
 const deployedContracts = {
   31337: {
     Forge: {
-      address: "0x959922bE3CAee4b8Cd9a407cc3ac1C251C2007B1",
+      address: "0x5067457698Fd6Fa1C6964e416b3f42713513B3dD",
       abi: [
         {
           inputs: [],
@@ -54,6 +54,22 @@ const deployedContracts = {
             },
           ],
           name: "InsufficientMaterial",
+          type: "error",
+        },
+        {
+          inputs: [
+            {
+              internalType: "address",
+              name: "user",
+              type: "address",
+            },
+            {
+              internalType: "uint256",
+              name: "itemId",
+              type: "uint256",
+            },
+          ],
+          name: "InvalidItem",
           type: "error",
         },
         {
@@ -414,7 +430,7 @@ const deployedContracts = {
       },
     },
     Items: {
-      address: "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9",
+      address: "0x0DCd1Bf9A1b36cE34237eEaFef220932846BCD82",
       abi: [
         {
           inputs: [],

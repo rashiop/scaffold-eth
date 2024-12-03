@@ -43,7 +43,6 @@ contract Items is ERC1155, ERC1155Pausable, ERC1155Burnable, Ownable {
 
   function mintItem(address to, uint256 materialId)
     external
-    onlyOwner
   {
     require(msg.sender == _forgeryAddress, Unauthorized());
     require(materialId >= 3 && materialId <= 6, InvalidMintId(materialId));
